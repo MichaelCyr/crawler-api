@@ -11,8 +11,8 @@
     "puppeteer": "*",
     "fs-extra": "*",
     "axios": "*",
+    "cheerio": "*",
     "archiver": "*",
-    "cors": "*",
-    "cheerio": "*"
+    "cors": "*"
   }
 }
