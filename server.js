@@ -14,11 +14,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const MAX_PAGES = 10;
 
-function normalize(url, base) {
-  try { return new URL(url, base).href; }
-  catch { return null; }
-}
-
+// 🔧 helper: check same domain
 function sameDomain(url, base) {
   try {
     return new URL(url).hostname === new URL(base).hostname;
@@ -27,9 +23,15 @@ function sameDomain(url, base) {
   }
 }
 
+// 🌐 homepage (fixes "Cannot GET /")
+app.get("/", (req, res) => {
+  res.send("🔥 HTTrack Pro API is running!");
+});
+
+// 🧠 main crawler endpoint
 app.post("/clone", async (req, res) => {
   const startUrl = req.body.url;
-  if (!startUrl) return res.status(400).send("No URL");
+  if (!startUrl) return res.status(400).send("No URL provided");
 
   const id = Date.now().toString();
   const root = path.join(__dirname, "site", id);
@@ -47,6 +49,8 @@ app.post("/clone", async (req, res) => {
   let queue = [startUrl];
   let visited = new Set();
 
+  console.log("🕷 Starting crawl:", startUrl);
+
   while (queue.length && visited.size < MAX_PAGES) {
     const url = queue.shift();
     if (visited.has(url)) continue;
@@ -58,21 +62,26 @@ app.post("/clone", async (req, res) => {
       const html = await page.content();
       const $ = cheerio.load(html);
 
-      let fileName = url.replace(startUrl, "").replace(/[^a-z0-9]/gi, "_");
+      let fileName = url
+        .replace(startUrl, "")
+        .replace(/[^a-z0-9]/gi, "_");
+
       if (!fileName || fileName === "_") fileName = "index";
 
       const filePath = path.join(root, fileName + ".html");
 
-      // collect links
+      // 🔗 collect links
       $("a[href]").each((_, el) => {
         const link = $(el).attr("href");
-        const full = normalize(link, url);
-        if (full && sameDomain(full, startUrl)) {
-          if (!visited.has(full)) queue.push(full);
-        }
+        try {
+          const full = new URL(link, url).href;
+          if (sameDomain(full, startUrl) && !visited.has(full)) {
+            queue.push(full);
+          }
+        } catch {}
       });
 
-      // assets
+      // 📦 assets
       const assets = [];
       $("img[src]").each((_, el) => assets.push($(el).attr("src")));
       $("script[src]").each((_, el) => assets.push($(el).attr("src")));
@@ -82,8 +91,7 @@ app.post("/clone", async (req, res) => {
 
       for (const a of assets) {
         try {
-          const full = normalize(a, url);
-          if (!full) continue;
+          const full = new URL(a, url).href;
 
           const name = path.basename(full.split("?")[0]);
           const dest = path.join(assetsDir, name);
@@ -104,12 +112,13 @@ app.post("/clone", async (req, res) => {
       await fs.writeFile(filePath, finalHtml);
 
     } catch (e) {
-      console.log("fail:", url);
+      console.log("❌ Failed:", url);
     }
   }
 
   await browser.close();
 
+  // 📦 ZIP result
   const zipPath = root + ".zip";
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip");
@@ -124,5 +133,5 @@ app.post("/clone", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log("🚀 running on", PORT);
+  console.log("🚀 HTTrack Pro running on port", PORT);
 });
